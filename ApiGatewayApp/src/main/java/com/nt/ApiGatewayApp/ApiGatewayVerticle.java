@@ -28,10 +28,10 @@ public class ApiGatewayVerticle extends AbstractVerticle {
 		WebClient client = WebClient.create(vertx);
 		// Configure Circuit Breaker
 		CircuitBreaker breaker = CircuitBreaker.create("api-circuit-breaker", vertx,
-				new CircuitBreakerOptions().setMaxFailures(3)// Open circuit after 3 consecutive failures
-						.setTimeout(2000) // Timeout for each call (2 seconds)
+				new CircuitBreakerOptions().setMaxFailures(AppConstants.MAX_FAILURES)// Open circuit after 3 consecutive failures
+						.setTimeout(AppConstants.TIMEOUT_MS) // Timeout for each call (2 seconds)
 						.setFallbackOnFailure(true) // Use fallback on failure
-						.setResetTimeout(5000)); // Retry service after 5 seconds
+						.setResetTimeout(AppConstants.TIMEOUT_MS)); // Retry service after 5 seconds
 
 		// Create a router for handling HTTP requests
 		Router router = Router.router(vertx);
@@ -43,12 +43,12 @@ public class ApiGatewayVerticle extends AbstractVerticle {
 			// Call to fetch post title
 			Future<JsonObject> postFuture = breaker.executeWithFallback(promise -> {
 				LOGGER.info("Calling posts API...");
-				client.getAbs("https://jsonplaceholder.typicode.com/posts/1").send(ar -> {
+				client.getAbs(AppConstants.POSTS_API_URL).send(ar -> {
 					if (ar.succeeded()) {
 						// Extract title from response
 						String title = ar.result().bodyAsJsonObject().getString("title");
 						LOGGER.info("Post title fetched: " + title);
-						promise.complete(new JsonObject().put("post_title", title));
+						promise.complete(new JsonObject().put(AppConstants.POST_TITLE_KEY, title));
 					} else {
 						LOGGER.error("Failed to fetch post data", ar.cause());
 						promise.fail("Post API failed");
@@ -56,18 +56,18 @@ public class ApiGatewayVerticle extends AbstractVerticle {
 				});
 			}, v -> {
 				LOGGER.warn("Post API fallback triggered.");
-				return new JsonObject().put("post_title", "Unavailable");
+				return new JsonObject().put(AppConstants.POST_TITLE_KEY, AppConstants.FALLBACK_POST_TITLE);
 			}); // Fallback if API fails
 
 			// Call to fetch user name
 			Future<JsonObject> userFuture = breaker.executeWithFallback(promise -> {
 				LOGGER.info("Calling users API...");
-				client.getAbs("https://jsonplaceholder.typicode.com/users/1").send(ar -> {
+				client.getAbs(AppConstants.USERS_API_URL).send(ar -> {
 					if (ar.succeeded()) {
 						// Extract name from response
 						String name = ar.result().bodyAsJsonObject().getString("name");
 						LOGGER.info("User name fetched: " + name);
-						promise.complete(new JsonObject().put("author_name", name));
+						promise.complete(new JsonObject().put(AppConstants.AUTHOR_NAME_KEY, name));
 					} else {
 						LOGGER.error("Failed to fetch user data", ar.cause());
 						promise.fail("User API failed");
@@ -75,7 +75,7 @@ public class ApiGatewayVerticle extends AbstractVerticle {
 				});
 			}, v -> {
 				LOGGER.warn("User API fallback triggered.");
-				return new JsonObject().put("author_name", "Unknown"); // Fallback if API fails
+				return new JsonObject().put(AppConstants.AUTHOR_NAME_KEY, AppConstants.FALLBACK_AUTHOR_NAME); // Fallback if API fails
 			});
 
 			// Combine both futures
@@ -83,20 +83,20 @@ public class ApiGatewayVerticle extends AbstractVerticle {
 				if (ar.succeeded()) {
 					JsonObject result = postFuture.result().mergeIn(userFuture.result());
 					LOGGER.info("Sending successful aggregated response.");
-					ctx.response().putHeader("Content-Type", "application/json").end(result.encodePrettily());
+					ctx.response().putHeader(AppConstants.CONTENT_TYPE, AppConstants.APPLICATION_JSON).end(result.encodePrettily());
 				} else {
 					LOGGER.error("One or more API calls failed.", ar.cause());
-					ctx.response().setStatusCode(500).putHeader("Content-Type", "application/json")
-							.end(new JsonObject().put("error", "One or more API calls failed").encodePrettily());
+					ctx.response().setStatusCode(AppConstants.STATUS_CODE).putHeader(AppConstants.CONTENT_TYPE, AppConstants.APPLICATION_JSON)
+							.end(new JsonObject().put(AppConstants.ERROR_KEY, AppConstants.FALLBACK_ERROR_MESSAGE).encodePrettily());
 				}
 			});
 
 		});
 
 		// Start HTTP server on port 8080
-		vertx.createHttpServer().requestHandler(router).listen(8080, http -> {
+		vertx.createHttpServer().requestHandler(router).listen(AppConstants.SERVER_PORT, http -> {
 			if (http.succeeded()) {
-				LOGGER.info("HTTP server started on port 8080");
+				LOGGER.info("HTTP server started on port "+AppConstants.SERVER_PORT);
 				startPromise.complete();
 				// System.out.println("HTTP server started on port 8080");
 			} else {
